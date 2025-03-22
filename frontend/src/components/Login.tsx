@@ -1,17 +1,23 @@
 import React, { useState } from 'react';
-import { Bot, Lock, User } from 'lucide-react';
+import { Bot, Lock, User, Github, Mail } from 'lucide-react';
+import { useAuth0 } from "@auth0/auth0-react";
 
 interface LoginProps {
   onLogin: (username: string, password: string) => void;
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const { loginWithRedirect, isAuthenticated, isLoading } = useAuth0();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onLogin(username, password);
+  };
+
+  const handleAuth0Login = () => {
+    loginWithRedirect();
   };
 
   return (
@@ -26,6 +32,28 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           ERP AI Sentinel
         </h1>
         
+        {/* Auth0 Login Button */}
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={handleAuth0Login}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center py-2 px-4 mb-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200"
+          >
+            {isLoading ? 'Loading...' : 'Sign in with Auth0'}
+          </button>
+        </div>
+        
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-white px-2 text-sm text-gray-500">Or continue with username</span>
+          </div>
+        </div>
+        
+        {/* Regular Login Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -65,7 +93,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             type="submit"
             className="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition duration-200"
           >
-            Sign In
+            Sign In with Username
           </button>
         </form>
 

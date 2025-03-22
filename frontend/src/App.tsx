@@ -6,7 +6,7 @@ import { UserManagement } from './components/UserManagement';
 import { DataManagement } from './components/DataManagement';
 import { User } from './types';
 import { dataStore } from './store/data';
-
+import { useAuth0 } from '@auth0/auth0-react';
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [activeView, setActiveView] = useState<'chat' | 'admin' | 'users' | 'data'>('chat');

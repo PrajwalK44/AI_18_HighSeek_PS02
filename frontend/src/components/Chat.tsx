@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User as UserIcon, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Send, Bot, User as UserIcon, Mic, MicOff, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { Message, ChatResponse, User } from '../types';
 import clsx from 'clsx';
@@ -16,6 +16,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recognitionSupported, setRecognitionSupported] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [currentSpeakingId, setCurrentSpeakingId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -104,6 +105,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     }
 
     const userMessage: Message = {
+      id: `user-${Date.now()}`,
       role: 'user',
       content: input,
       timestamp: new Date().toISOString(),
@@ -132,18 +134,23 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
       const data: ChatResponse = await response.json();
       
       const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: formatResponse(data),
+        content: data.response,
         timestamp: new Date().toISOString(),
+        source: data.source,
+        confidence: data.confidence
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Error:', error);
       const errorMessage: Message = {
+        id: `error-${Date.now()}`,
         role: 'assistant',
         content: 'Sorry, I encountered an error. Please try again.',
         timestamp: new Date().toISOString(),
+        source: 'error'
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
@@ -151,34 +158,92 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     }
   };
 
-  const formatResponse = (response: ChatResponse): string => {
-    switch (response.source) {
+  // Format the message content based on its source
+  const renderMessageContent = (message: Message) => {
+    if (message.role === 'user') {
+      return <div className="whitespace-pre-wrap">{message.content}</div>;
+    }
+
+    switch (message.source) {
       case 'erp':
-        return `💼 **ERP System Data:**\n\n${response.response}`;
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2 text-blue-700 font-medium">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+              <span>ERP System Data</span>
+            </div>
+            <div className="pl-2 border-l-4 border-blue-200 whitespace-pre-wrap">
+              {message.content}
+            </div>
+          </div>
+        );
+      
       case 'escalated':
-        return `🔔 **${response.response}**`;
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2 text-red-600 font-medium">
+              <AlertTriangle className="w-5 h-5" />
+              <span>Escalation Required</span>
+            </div>
+            <div className="pl-2 border-l-4 border-red-300 whitespace-pre-wrap text-red-600 font-medium">
+              {message.content}
+            </div>
+          </div>
+        );
+      
       case 'llm':
-        return `${response.response}\n\n*Confidence: ${response.confidence?.toFixed(2) ?? 'N/A'}*`;
+        return (
+          <div className="space-y-2">
+            <div className="whitespace-pre-wrap">{message.content}</div>
+            {message.confidence !== undefined && (
+              <div className="text-xs text-gray-500 mt-2">
+                <div className="flex items-center space-x-2">
+                  <div className="text-gray-500">Confidence:</div>
+                  <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className={clsx(
+                        "h-full rounded-full", 
+                        message.confidence > 0.8 ? "bg-green-500" : 
+                        message.confidence > 0.5 ? "bg-yellow-500" : "bg-red-500"
+                      )}
+                      style={{ width: `${Math.max(5, message.confidence * 100)}%` }}
+                    ></div>
+                  </div>
+                  <div>{(message.confidence * 100).toFixed(0)}%</div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      
+      case 'error':
+        return (
+          <div className="text-red-500 flex items-center space-x-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{message.content}</span>
+          </div>
+        );
+      
       default:
-        return `⚠️ ${response.response}`;
+        return (
+          <div className="whitespace-pre-wrap">
+            <svg className="inline-block w-5 h-5 mr-1 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            {message.content}
+          </div>
+        );
     }
   };
 
   // Get clean text for speech synthesis (remove markdown and emojis)
-  const getCleanTextForSpeech = (text: string): string => {
-    // Remove markdown formatting
-    let cleanText = text
-      .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markdown
-      .replace(/\*(.*?)\*/g, '$1')     // Remove italic markdown
-      .replace(/\n\n/g, '. ')          // Replace double newlines with a period and space
-      .replace(/\n/g, ' ')             // Replace single newlines with a space
-      
-    // Remove emojis and other symbols
-    cleanText = cleanText
-      .replace(/💼|🔔|⚠️/g, '')
-      .trim();
-      
-    return cleanText;
+  const getCleanTextForSpeech = (message: Message): string => {
+    // Just return the plain content without any formatting
+    return message.content;
   };
 
   const speakMessage = (message: Message) => {
@@ -187,15 +252,21 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
       return;
     }
     
-    // Cancel any ongoing speech
-    if (isSpeaking) {
+    // If already speaking this message, stop it
+    if (isSpeaking && currentSpeakingId === message.id) {
       speechSynthesis.cancel();
       setIsSpeaking(false);
+      setCurrentSpeakingId(null);
       return;
     }
     
+    // If speaking a different message, stop that one first
+    if (isSpeaking) {
+      speechSynthesis.cancel();
+    }
+    
     // Create a new utterance with clean text
-    const cleanText = getCleanTextForSpeech(message.content);
+    const cleanText = getCleanTextForSpeech(message);
     const utterance = new SpeechSynthesisUtterance(cleanText);
     
     // Configure speech options
@@ -218,15 +289,18 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     // Set up events
     utterance.onstart = () => {
       setIsSpeaking(true);
+      setCurrentSpeakingId(message.id);
     };
     
     utterance.onend = () => {
       setIsSpeaking(false);
+      setCurrentSpeakingId(null);
     };
     
     utterance.onerror = (event) => {
       console.error('Speech synthesis error', event);
       setIsSpeaking(false);
+      setCurrentSpeakingId(null);
     };
     
     // Save reference and start speaking
@@ -238,6 +312,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     if ('speechSynthesis' in window && isSpeaking) {
       speechSynthesis.cancel();
       setIsSpeaking(false);
+      setCurrentSpeakingId(null);
     }
   };
 
@@ -266,47 +341,61 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {messages.map((message, index) => (
+        {messages.map((message) => (
           <div
-            key={`message-${index}-${message.timestamp}`}
+            key={message.id || `${message.role}-${message.timestamp}`}
             className={clsx(
               'flex items-start space-x-3',
               message.role === 'user' ? 'justify-end' : 'justify-start'
             )}
           >
             {message.role === 'assistant' && (
-              <div className="bg-indigo-100 p-2 rounded-full">
-                <Bot className="w-5 h-5 text-indigo-600" />
+              <div className={clsx(
+                "p-2 rounded-full",
+                message.source === 'escalated' ? "bg-red-100" : "bg-indigo-100"
+              )}>
+                <Bot className={clsx(
+                  "w-5 h-5",
+                  message.source === 'escalated' ? "text-red-600" : "text-indigo-600"
+                )} />
               </div>
             )}
             <div
               className={clsx(
-                'max-w-2xl rounded-lg px-4 py-2 text-sm relative group',
+                'max-w-2xl rounded-lg px-4 py-2 text-sm relative',
                 message.role === 'user'
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-white border border-gray-200'
+                  : message.source === 'escalated'
+                    ? 'bg-red-50 border border-red-200'
+                    : message.source === 'erp'
+                      ? 'bg-blue-50 border border-blue-200'
+                      : 'bg-white border border-gray-200'
               )}
             >
-              <div className="whitespace-pre-wrap">{message.content}</div>
+              {renderMessageContent(message)}
               <div className={clsx(
-                'text-xs mt-1 flex items-center justify-between',
-                message.role === 'user' ? 'text-indigo-200' : 'text-gray-400'
+                'text-xs mt-2 flex items-center justify-between',
+                message.role === 'user' ? 'text-indigo-200' : 
+                  message.source === 'escalated' ? 'text-red-400' : 
+                  message.source === 'erp' ? 'text-blue-400' : 'text-gray-400'
               )}>
                 <span>{format(new Date(message.timestamp), 'HH:mm')}</span>
                 
                 {message.role === 'assistant' && (
                   <button
-                    onClick={() => message.role === 'assistant' && speakMessage(message)}
+                    onClick={() => speakMessage(message)}
                     className={clsx(
                       'ml-2 p-1 rounded-full opacity-70 hover:opacity-100 transition-opacity',
-                      isSpeaking ? 'text-indigo-600 bg-indigo-100' : 'text-gray-500 hover:bg-gray-100'
+                      isSpeaking && currentSpeakingId === message.id 
+                        ? 'text-indigo-600 bg-indigo-100' 
+                        : 'text-gray-500 hover:bg-gray-100'
                     )}
-                    title={isSpeaking ? "Stop speaking" : "Listen to this message"}
+                    title={isSpeaking && currentSpeakingId === message.id ? "Stop speaking" : "Listen to this message"}
                   >
-                    {isSpeaking ? (
-                      <VolumeX className="w-3 h-3" />
+                    {isSpeaking && currentSpeakingId === message.id ? (
+                      <VolumeX className="w-4 h-4" />
                     ) : (
-                      <Volume2 className="w-3 h-3" />
+                      <Volume2 className="w-4 h-4" />
                     )}
                   </button>
                 )}
@@ -325,7 +414,12 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
               <Bot className="w-5 h-5 text-indigo-600" />
             </div>
             <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm">
-              <div className="animate-pulse">Processing...</div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce delay-75"></div>
+                <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce delay-150"></div>
+                <span className="text-gray-500">Thinking...</span>
+              </div>
             </div>
           </div>
         )}
