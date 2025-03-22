@@ -1,0 +1,14 @@
+{
+  "name": "ai-collision",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "erp-ai-assistant"
+  ],
+  "scripts": {
+    "dev": "cd erp-ai-assistant && npm run dev",
+    "build": "cd erp-ai-assistant && npm run build",
+    "start": "cd erp-ai-assistant && npm run start",
+    "lint": "cd erp-ai-assistant && npm run lint"
+  }
+}
