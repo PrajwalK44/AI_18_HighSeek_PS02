@@ -1,9 +1,12 @@
+
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 
-const API_URL = 'http://127.0.0.1:8003';
+// Keep both API URLs
+const FASTAPI_URL = 'http://127.0.0.1:8003';
+const EXPRESS_URL = 'http://localhost:5000';
 
 interface FAQ {
   id: number;
@@ -19,31 +22,47 @@ interface Escalation {
   timestamp: string;
 }
 
+interface Metric {
+  department: string;
+  queries: number;
+}
+
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'faq' | 'metrics' | 'escalations'>('faq');
   const [newFAQ, setNewFAQ] = useState({ question: '', answer: '', department: 'HR', tags: '' });
   const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [escalations, setEscalations] = useState<Escalation[]>([]);
-  const [metrics] = useState([
-    { department: 'HR', queries: 125 },
-    { department: 'Sales', queries: 200 },
-    { department: 'Finance', queries: 150 }
-  ]);
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         if (activeTab === 'faq') {
-          const response = await fetch(`${API_URL}/faqs`);
+          // Use FastAPI for general data fetching
+          const response = await fetch(`${EXPRESS_URL}/api/faqs`);
           const data = await response.json();
           setFaqs(data);
+        } else if (activeTab === 'metrics') {
+          // Fetch metrics from Express backend
+          setIsLoadingMetrics(true);
+          const response = await fetch(`${EXPRESS_URL}/api/metrics/department-metrics`);
+          if (response.ok) {
+            const data = await response.json();
+            setMetrics(data);
+          }
+          setIsLoadingMetrics(false);
         } else if (activeTab === 'escalations') {
-          const response = await fetch(`${API_URL}/escalations`);
+          // Use FastAPI for escalations
+          const response = await fetch(`${FASTAPI_URL}/escalations`);
           const data = await response.json();
           setEscalations(data);
         }
       } catch (error) {
         console.error('Error fetching data:', error);
+        if (activeTab === 'metrics') {
+          setIsLoadingMetrics(false);
+        }
       }
     };
     
@@ -54,7 +73,8 @@ export const AdminDashboard: React.FC = () => {
     e.preventDefault();
     try {
       const tags = newFAQ.tags.split(',').map(tag => tag.trim());
-      const response = await fetch(`${API_URL}/faqs`, {
+      // Use FastAPI for adding FAQs
+      const response = await fetch(`${EXPRESS_URL}/api/faqs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -77,7 +97,8 @@ export const AdminDashboard: React.FC = () => {
 
   const handleDeleteFAQ = async (id: number) => {
     try {
-      const response = await fetch(`${API_URL}/faqs/${id}`, {
+      // Use FastAPI for deleting FAQs
+      const response = await fetch(`${FASTAPI_URL}/faqs/${id}`, {
         method: 'DELETE'
       });
       
@@ -88,6 +109,59 @@ export const AdminDashboard: React.FC = () => {
       console.error('Error deleting FAQ:', error);
     }
   };
+
+  // New function to filter FAQs by department - uses Express backend
+  const handleFilterByDepartment = async (department: string) => {
+    try {
+      // Use Express backend for department filtering
+      const response = await fetch(`${EXPRESS_URL}/api/faqs/department/${department}`);
+      console.log(response);
+      if (response.ok) {
+        const filteredFaqs = await response.json();
+        console.log(filteredFaqs);
+        setFaqs(filteredFaqs);
+      }
+    } catch (error) {
+      console.error('Error filtering FAQs:', error);
+    }
+  };
+
+  // Function to reset filters and show all FAQs - uses FastAPI
+  const handleResetFilters = async () => {
+    try {
+      // Use FastAPI for getting all FAQs
+      const response = await fetch(`${EXPRESS_URL}/api/faqs`);
+      if (response.ok) {
+        const allFaqs = await response.json();
+        setFaqs(allFaqs);
+      }
+    } catch (error) {
+      console.error('Error resetting filters:', error);
+    }
+  };
+
+  // Refresh metrics after adding or deleting FAQs
+  const refreshMetrics = async () => {
+    try {
+      setIsLoadingMetrics(true);
+      const response = await fetch(`${EXPRESS_URL}/api/metrics/department-metrics`);
+      if (response.ok) {
+        const data = await response.json();
+        setMetrics(data);
+      }
+      setIsLoadingMetrics(false);
+    } catch (error) {
+      console.error('Error refreshing metrics:', error);
+      setIsLoadingMetrics(false);
+    }
+  };
+
+  // Update metrics after FAQ operations
+  useEffect(() => {
+    if (activeTab === 'metrics') {
+      refreshMetrics();
+    }
+  }, [faqs]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -169,6 +243,37 @@ export const AdminDashboard: React.FC = () => {
             </form>
           </div>
 
+          {/* New department filter section */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-lg font-semibold mb-4">Filter FAQs</h2>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => handleFilterByDepartment('HR')}
+                className="px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200"
+              >
+                HR
+              </button>
+              <button
+                onClick={() => handleFilterByDepartment('Sales')}
+                className="px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200"
+              >
+                Sales
+              </button>
+              <button
+                onClick={() => handleFilterByDepartment('Finance')}
+                className="px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200"
+              >
+                Finance
+              </button>
+              <button
+                onClick={handleResetFilters}
+                className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200"
+              >
+                Show All
+              </button>
+            </div>
+          </div>
+
           <div className="bg-white p-6 rounded-lg shadow">
             <h2 className="text-lg font-semibold mb-4">Existing FAQs</h2>
             <div className="space-y-4">
@@ -178,11 +283,14 @@ export const AdminDashboard: React.FC = () => {
                     <div>
                       <h3 className="font-medium">{faq.question}</h3>
                       <p className="text-gray-600 mt-1">{faq.answer}</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div className="flex items-center mt-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                          {faq.department}
+                        </span>
                         {faq.tags.map((tag) => (
                           <span
                             key={tag}
-                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2"
                           >
                             {tag}
                           </span>
@@ -198,6 +306,9 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
               ))}
+              {faqs.length === 0 && (
+                <p className="text-gray-500 text-center py-4">No FAQs found. Try adjusting your filters.</p>
+              )}
             </div>
           </div>
         </div>
@@ -206,16 +317,34 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'metrics' && (
         <div className="bg-white p-6 rounded-lg shadow">
           <h2 className="text-lg font-semibold mb-4">User Metrics</h2>
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={refreshMetrics}
+              className="px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              Refresh Metrics
+            </button>
+          </div>
           <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={metrics}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="department" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="queries" fill="#4F46E5" />
-              </BarChart>
-            </ResponsiveContainer>
+            {isLoadingMetrics ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-gray-500">Loading metrics...</p>
+              </div>
+            ) : metrics.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={metrics}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="department" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="queries" fill="#4F46E5" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-gray-500">No data available. Add some FAQs first.</p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -250,6 +379,13 @@ export const AdminDashboard: React.FC = () => {
                     </td>
                   </tr>
                 ))}
+                {escalations.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-6 py-4 text-center text-sm text-gray-500">
+                      No escalated queries found.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

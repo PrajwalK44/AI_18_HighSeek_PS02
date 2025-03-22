@@ -9,6 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 // Connect to MongoDB
+
 mongoose.connect('mongodb://localhost:27017/faqdb', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -20,5 +21,6 @@ mongoose.connect('mongodb://localhost:27017/faqdb', {
   });
 
 app.use('/api/faqs', require('./routes/faqRoutes'));
+app.use('/api/metrics', require('./routes/metricRoutes'));  
 
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));

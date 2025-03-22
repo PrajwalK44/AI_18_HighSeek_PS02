@@ -42,4 +42,16 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+router.get('/department/:department', async (req, res) => {
+
+    try {
+      console.log("req.params.department");
+      const faqs = await FAQ.find({ department: req.params.department });
+      console.log(faqs);
+      res.json(faqs);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
 module.exports = router;
