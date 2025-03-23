@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 from datetime import datetime
 from langchain_groq import ChatGroq
 from langchain_core.output_parsers import StrOutputParser
@@ -33,6 +33,8 @@ db = client.erp_assistant
 faqs_collection = db.faqs
 escalations_collection = db.escalations
 faq_cache_collection = db.faq_cache
+# New collection for chat history
+chat_history_collection = db.chat_history
 
 # Helper class for PyObjectId
 class PyObjectId(ObjectId):
@@ -50,17 +52,41 @@ class PyObjectId(ObjectId):
     def __modify_schema__(cls, field_schema):
         field_schema.update(type="string")
 
+# User model
+class User(BaseModel):
+    username: str
+    department: str
+    user_id: Optional[str] = None
+
+# Message model for chat history
+class MessageModel(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+    timestamp: str
+    source: Optional[str] = None
+    confidence: Optional[float] = None
+    isError: Optional[bool] = None
+
+# Chat history model
+class ChatHistoryModel(BaseModel):
+    user_id: str
+    messages: List[MessageModel]
+    last_updated: datetime
+
 # Chat request model
 class ChatRequest(BaseModel):
     message: str
-    department: str  # Add department directly to request
+    department: str
+    username: str  # Add username to identify the user
+    user_id: Optional[str] = None  # Optional user_id
 
 class ChatResponse(BaseModel):
     response: str
     source: str
-    llm_reply: Optional[str] = None  # Add LLM reply field
-    faq_used: Optional[bool] = None   # Add FAQ usage indicator
+    llm_reply: Optional[str] = None
+    faq_used: Optional[bool] = None
     confidence: Optional[float] = None
+    chat_history_id: Optional[str] = None  # Add chat history ID to response
 
 # FAQ Model
 class FAQModel(BaseModel):
@@ -74,6 +100,10 @@ class FAQModel(BaseModel):
         allow_population_by_field_name = True
         arbitrary_types_allowed = True
         json_encoders = {ObjectId: str}
+
+# Chat history request model
+class ChatHistoryRequest(BaseModel):
+    user_id: str
 
 # LLM initialization
 def get_llm():
@@ -119,93 +149,52 @@ async def get_faq_response(query: str, department: str) -> Optional[dict]:
     """
     logger.info(f"FAQ lookup: query='{query}', department='{department}'")
     
-    # Check cache first
-    cache_key = f"faq:{department}:{query.lower().strip()}"
-    cached_result = await faq_cache_collection.find_one({"key": cache_key})
-    if cached_result:
-        logger.info(f"Cache hit for key: {cache_key}")
-        return {"answer": cached_result["answer"], "score": 1.0}
-    else:
-        logger.info(f"Cache miss for key: {cache_key}")
-    
-    # First try direct string matching (case insensitive)
     try:
-        logger.info(f"Attempting exact match with regex: '^{query}$' in department '{department}'")
+        # First try exact match
         exact_match_query = {
             "department": department,
             "question": {"$regex": f"^{query}$", "$options": "i"}
         }
-        logger.info(f"Exact match query: {str(exact_match_query)}")
-        
         exact_match = await faqs_collection.find_one(exact_match_query)
         
         if exact_match:
-            logger.info(f"Exact match found: {exact_match['question']}")
-            # Save to cache and return with perfect score
-            await faq_cache_collection.insert_one({
-                "key": cache_key,
-                "answer": exact_match["answer"],
-                "created_at": datetime.utcnow()
-            })
             return {"answer": exact_match["answer"], "score": 1.0}
-        else:
-            logger.info("No exact match found")
-    except Exception as e:
-        logger.error(f"Error during exact match search: {str(e)}")
 
-    # If no exact match, proceed with similarity search
-    try:
-        logger.info(f"Fetching all FAQs for department '{department}' for similarity search")
+        # If no exact match, do similarity search
         cursor = faqs_collection.find({"department": department})
         faqs = await cursor.to_list(length=100)
-        logger.info(f"Found {len(faqs)} FAQs in department '{department}'")
 
         if not faqs:
-            logger.info(f"No FAQs found for department '{department}'")
             return None
 
         # Prepare data for similarity calculation
         questions = [faq["question"] for faq in faqs]
         answers = [faq["answer"] for faq in faqs]
         
-        # Log a few questions for debugging
-        if questions:
-            sample_questions = questions[:min(3, len(questions))]
-            logger.info(f"Sample questions in database: {sample_questions}")
-
         # Compute TF-IDF vectors
         vectorizer = TfidfVectorizer()
         tfidf_matrix = vectorizer.fit_transform(questions + [query])
-
-        # Calculate cosine similarity between the query and all FAQs
-        query_vector = tfidf_matrix[-1]  # Last vector is the query
-        faq_vectors = tfidf_matrix[:-1]  # All vectors except the last are FAQs
+        
+        # Calculate cosine similarity
+        query_vector = tfidf_matrix[-1]
+        faq_vectors = tfidf_matrix[:-1]
         similarities = cosine_similarity(query_vector, faq_vectors).flatten()
-
-        # Find the best match
+        
+        # Find best match
         best_match_index = np.argmax(similarities)
         best_score = similarities[best_match_index]
 
-        logger.info(f"Best similarity score: {best_score} for question: '{questions[best_match_index]}'")
+        # Return if confidence is high (above 0.8)
+        if best_score > 0.8:
+            return {
+                "answer": answers[best_match_index],
+                "score": best_score,
+                "question": questions[best_match_index]
+            }
 
-        # Return with the similarity score
-        if best_score > 0.5:
-            best_answer = answers[best_match_index]
-            logger.info(f"Similarity match found above threshold (0.5)")
-
-            # Save to cache
-            await faq_cache_collection.insert_one({
-                "key": cache_key,
-                "answer": best_answer,
-                "created_at": datetime.utcnow()
-            })
-            return {"answer": best_answer, "score": best_score}
-        else:
-            logger.info(f"Best similarity score {best_score} below threshold (0.5)")
     except Exception as e:
-        logger.error(f"Error during similarity search: {str(e)}")
-
-    logger.info("No matching FAQ found")
+        logger.error(f"Error in FAQ lookup: {str(e)}")
+    
     return None
 
 def calculate_confidence(response: str, query: str) -> float:
@@ -221,6 +210,46 @@ def calculate_confidence(response: str, query: str) -> float:
         return float(result.strip())
     except:
         return 0.7
+
+# Function to get or create a user's chat history
+async def get_or_create_chat_history(username: str, department: str) -> str:
+    # Create a consistent user_id from username and department
+    user_id = f"{username.lower()}_{department.lower()}"
+    
+    # Look up existing chat history
+    chat_history = await chat_history_collection.find_one({"user_id": user_id})
+    
+    if not chat_history:
+        # Create a new chat history with welcome message
+        welcome_message = {
+            "role": "assistant",
+            "content": f"Hello {username}! I'm your AI assistant for {department}. How can I help you today?",
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": "system"
+        }
+        
+        new_history = {
+            "user_id": user_id,
+            "username": username,
+            "department": department,
+            "messages": [welcome_message],
+            "last_updated": datetime.utcnow()
+        }
+        
+        result = await chat_history_collection.insert_one(new_history)
+        return str(result.inserted_id)
+    
+    return str(chat_history["_id"])
+
+# Function to add messages to chat history
+async def add_to_chat_history(user_id: str, messages: List[Dict]) -> None:
+    await chat_history_collection.update_one(
+        {"user_id": user_id},
+        {
+            "$push": {"messages": {"$each": messages}},
+            "$set": {"last_updated": datetime.utcnow()}
+        }
+    )
 
 # API Endpoints
 @app.get("/escalations", response_model=List[Dict])
@@ -273,20 +302,42 @@ async def delete_faq(faq_id: int):
 @app.post("/chat", response_model=ChatResponse)
 async def process_chat_message(request: ChatRequest):
     try:
-        logger.info(f"Received chat request: message='{request.message}', department='{request.department}'")
+        logger.info(f"Received chat request: message='{request.message}', department='{request.department}', username='{request.username}'")
+        
+        # Create or get user's chat history
+        user_id = f"{request.username.lower()}_{request.department.lower()}"
+        chat_history_id = await get_or_create_chat_history(request.username, request.department)
+        
+        # Add user message to chat history
+        user_message = {
+            "role": "user",
+            "content": request.message,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        await add_to_chat_history(user_id, [user_message])
         
         # Step 1: Check if a similar FAQ exists
         faq_result = await get_faq_response(request.message, request.department)
         
-        # If FAQ answer exists, return it directly without escalation
-        if faq_result:
-            logger.info(f"FAQ match found with score: {faq_result['score']}")
+        if faq_result and faq_result["score"] > 0.8:
+            logger.info(f"High confidence FAQ match found: {faq_result['score']}")
+            
+            assistant_message = {
+                "role": "assistant",
+                "content": faq_result["answer"],
+                "timestamp": datetime.utcnow().isoformat(),
+                "source": "knowledge_base",
+                "confidence": faq_result["score"]
+            }
+            
+            await add_to_chat_history(user_id, [assistant_message])
+            
             return ChatResponse(
                 response=faq_result["answer"],
                 source="knowledge_base",
-                llm_reply=None,  # No LLM reply needed
                 faq_used=True,
-                confidence=faq_result["score"]
+                confidence=faq_result["score"],
+                chat_history_id=chat_history_id
             )
         else:
             logger.info("No FAQ match found, proceeding with LLM")
@@ -309,33 +360,95 @@ async def process_chat_message(request: ChatRequest):
             await escalations_collection.insert_one({
                 "query": request.message,
                 "department": request.department,
+                "user_id": user_id,
+                "username": request.username,
                 "timestamp": datetime.utcnow(),
                 "llm_reply": llm_reply  # Store LLM reply with escalation
             })
+            
+            escalated_response = f"Escalated to support team. Initial AI response: {llm_reply}"
+            
+            # Create assistant response for chat history
+            assistant_message = {
+                "role": "assistant",
+                "content": escalated_response,
+                "timestamp": datetime.utcnow().isoformat(),
+                "source": "escalated",
+                "confidence": confidence
+            }
+            
+            # Add to chat history
+            await add_to_chat_history(user_id, [assistant_message])
+            
             return ChatResponse(
-                response=f"Escalated to support team. Initial AI response: {llm_reply}",
+                response=escalated_response,
                 source="escalated",
                 llm_reply=llm_reply,
                 faq_used=False,
-                confidence=confidence
+                confidence=confidence,
+                chat_history_id=chat_history_id
             )
 
         # Step 4: Regular LLM response (FAQ not found, but confidence is high)
         logger.info(f"Using LLM response with confidence: {confidence}")
+        
+        # Create assistant response for chat history
+        assistant_message = {
+            "role": "assistant",
+            "content": llm_reply,
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": "llm",
+            "confidence": confidence
+        }
+        
+        # Add to chat history
+        await add_to_chat_history(user_id, [assistant_message])
+        
         return ChatResponse(
             response=llm_reply,
             source="llm",
             llm_reply=llm_reply,
             faq_used=False,
-            confidence=confidence
+            confidence=confidence,
+            chat_history_id=chat_history_id
         )
 
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
+        error_response = f"Sorry, I encountered an error processing your request: {str(e)}"
+        
+        # Try to add error message to chat history if possible
+        try:
+            if request and hasattr(request, 'username') and hasattr(request, 'department'):
+                user_id = f"{request.username.lower()}_{request.department.lower()}"
+                error_message = {
+                    "role": "assistant",
+                    "content": error_response,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": "error",
+                    "isError": True
+                }
+                await add_to_chat_history(user_id, [error_message])
+        except Exception as hist_err:
+            logger.error(f"Failed to add error to chat history: {str(hist_err)}")
+        
         return ChatResponse(
-            response=f"Sorry, I encountered an error processing your request: {str(e)}",
+            response=error_response,
             source="error"
         )
+
+# New endpoint to get chat history for a user
+@app.get("/chat-history/{user_id}", response_model=Dict)
+async def get_chat_history(user_id: str):
+    chat_history = await chat_history_collection.find_one({"user_id": user_id})
+    
+    if not chat_history:
+        raise HTTPException(status_code=404, detail=f"Chat history for user {user_id} not found")
+    
+    # Convert ObjectId to string for JSON response
+    chat_history["_id"] = str(chat_history["_id"])
+    
+    return chat_history
 
 # Add a diagnostic endpoint to check database connection and content
 @app.get("/diagnostic/faqs")
@@ -365,6 +478,7 @@ async def diagnostic_faqs():
             "db_connected": False,
             "error": str(e)
         }
+
 # Initialize database with sample data if empty
 @app.on_event("startup")
 async def startup_db_client():
@@ -376,13 +490,13 @@ async def startup_db_client():
             sample_faq = {
                 "id": 1,
                 "question": "How do I request vacation time?",
-                "answer": "Login to the HR portal...",
+                "answer": "Login to the HR portal and navigate to 'Time Off Request'. Fill out the form with your desired dates and submit for approval.",
                 "department": "HR",
                 "tags": ["vacation", "time off"]
             }
             await faqs_collection.insert_one(sample_faq)
             
-            # Add the Finance example you provided
+            # Add the Finance example
             finance_faq = {
                 "id": 13,
                 "question": "How does IDMS handle Input Tax Credit (ITC)?",
@@ -391,6 +505,16 @@ async def startup_db_client():
                 "tags": ["ITC", "Tax Credits", "Reconciliation"]
             }
             await faqs_collection.insert_one(finance_faq)
+            
+            # Add a Sales example
+            sales_faq = {
+                "id": 24,
+                "question": "What are our current sales targets?",
+                "answer": "Current quarterly sales targets are $1.2M for domestic and $800K for international markets. Check the Sales Dashboard for your personal targets.",
+                "department": "Sales",
+                "tags": ["targets", "quotas", "goals"]
+            }
+            await faqs_collection.insert_one(sales_faq)
             
         logger.info("Database connected and initialized")
     except Exception as e:
