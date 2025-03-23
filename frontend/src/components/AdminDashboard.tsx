@@ -33,52 +33,23 @@ export const AdminDashboard: React.FC = () =>  {
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
-  const [token, setToken] = useState<string>('');
 
   useEffect(() => {
-    // Fetch the token when component mounts
-    const getToken = async () => {
-      try {
-        const accessToken = await getAccessTokenSilently();
-        setToken(accessToken);
-      } catch (error) {
-        console.error('Error getting access token:', error);
-      }
-    };
-    
-    getToken();
-  }, []);
-
-  useEffect(() => {
-    // Only fetch data if we have a token
-    if (!token) return;
-    
     const fetchData = async () => {
       try {
         if (activeTab === 'faq') {
-          // Use FastAPI for general data fetching
-          const response = await fetch(`${EXPRESS_URL}/api/faqs`, {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          });
+          const response = await fetch(`${EXPRESS_URL}/api/faqs`);
           const data = await response.json();
           setFaqs(data);
         } else if (activeTab === 'metrics') {
-          // Fetch metrics from Express backend
           setIsLoadingMetrics(true);
-          const response = await fetch(`${EXPRESS_URL}/api/metrics/department-metrics`, {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          });
+          const response = await fetch(`${EXPRESS_URL}/api/metrics/department-metrics`);
           if (response.ok) {
             const data = await response.json();
             setMetrics(data);
           }
           setIsLoadingMetrics(false);
         } else if (activeTab === 'escalations') {
-          // Use FastAPI for escalations
           const response = await fetch(`${FASTAPI_URL}/escalations`);
           const data = await response.json();
           setEscalations(data);
@@ -92,18 +63,16 @@ export const AdminDashboard: React.FC = () =>  {
     };
     
     fetchData();
-  }, [activeTab, token]);
+  }, [activeTab]);
 
   const handleAddFAQ = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const tags = newFAQ.tags.split(',').map(tag => tag.trim());
-      // Use FastAPI for adding FAQs
       const response = await fetch(`${EXPRESS_URL}/api/faqs`, {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           question: newFAQ.question,
@@ -125,7 +94,6 @@ export const AdminDashboard: React.FC = () =>  {
 
   const handleDeleteFAQ = async (id: number) => {
     try {
-      // Use FastAPI for deleting FAQs
       const response = await fetch(`${FASTAPI_URL}/faqs/${id}`, {
         method: 'DELETE'
       });
@@ -138,19 +106,11 @@ export const AdminDashboard: React.FC = () =>  {
     }
   };
 
-  // New function to filter FAQs by department - uses Express backend
   const handleFilterByDepartment = async (department: string) => {
     try {
-      // Use Express backend for department filtering
-      const response = await fetch(`${EXPRESS_URL}/api/faqs/department/${department}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      console.log(response);
+      const response = await fetch(`${EXPRESS_URL}/api/faqs/department/${department}`);
       if (response.ok) {
         const filteredFaqs = await response.json();
-        console.log(filteredFaqs);
         setFaqs(filteredFaqs);
       }
     } catch (error) {
@@ -158,15 +118,9 @@ export const AdminDashboard: React.FC = () =>  {
     }
   };
 
-  // Function to reset filters and show all FAQs - uses FastAPI
   const handleResetFilters = async () => {
     try {
-      // Use FastAPI for getting all FAQs
-      const response = await fetch(`${EXPRESS_URL}/api/faqs`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await fetch(`${EXPRESS_URL}/api/faqs`);
       if (response.ok) {
         const allFaqs = await response.json();
         setFaqs(allFaqs);
@@ -176,15 +130,10 @@ export const AdminDashboard: React.FC = () =>  {
     }
   };
 
-  // Refresh metrics after adding or deleting FAQs
   const refreshMetrics = async () => {
     try {
       setIsLoadingMetrics(true);
-      const response = await fetch(`${EXPRESS_URL}/api/metrics/department-metrics`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await fetch(`${EXPRESS_URL}/api/metrics/department-metrics`);
       if (response.ok) {
         const data = await response.json();
         setMetrics(data);
@@ -196,12 +145,11 @@ export const AdminDashboard: React.FC = () =>  {
     }
   };
 
-  // Update metrics after FAQ operations
   useEffect(() => {
-    if (activeTab === 'metrics' && token) {
+    if (activeTab === 'metrics') {
       refreshMetrics();
     }
-  }, [faqs, activeTab, token]);
+  }, [faqs, activeTab]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -283,7 +231,6 @@ export const AdminDashboard: React.FC = () =>  {
             </form>
           </div>
 
-          {/* New department filter section */}
           <div className="bg-white p-6 rounded-lg shadow">
             <h2 className="text-lg font-semibold mb-4">Filter FAQs</h2>
             <div className="flex space-x-2">

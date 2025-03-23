@@ -10,11 +10,6 @@ app.use(cors());
 app.use(express.json());
 
 // Auth0 JWT validation middleware
-const jwtCheck = auth({
-  audience: 'https://erp-api.example.com', // Set this in Auth0 dashboard
-  issuerBaseURL: 'https://dev-tuouf7y62vubigch.us.auth0.com/', // Your Auth0 domain
-  tokenSigningAlg: 'RS256'
-});
 
 // Connect to MongoDB
 mongoose.connect('mongodb://localhost:27017/faqdb', {
@@ -28,12 +23,12 @@ mongoose.connect('mongodb://localhost:27017/faqdb', {
   });
 
 // Public routes
-app.use('/api/public', require('./routes/publicRoutes'));
+
 // Example route with role check
 
 // Protected routes - require authentication
-app.use('/api/faqs', jwtCheck, require('./routes/faqRoutes'));
-app.use('/api/metrics', jwtCheck, require('./routes/metricRoutes'));  
+app.use('/api/faqs',  require('./routes/faqRoutes'));
+app.use('/api/metrics',  require('./routes/metricRoutes'));  
 
 // Error handler
 app.use((err, req, res, next) => {
