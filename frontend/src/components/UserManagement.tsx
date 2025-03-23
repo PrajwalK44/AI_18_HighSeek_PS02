@@ -21,12 +21,28 @@ export const UserManagement: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = (username: string) => {
+  const handleDeleteUser = async (username: string) => {
     if (username === 'admin') {
       alert('Cannot delete admin user');
       return;
     }
-    dataStore.deleteUser(username);
+
+    try {
+      // First delete from backend
+      const response = await fetch(`http://localhost:5000/api/users/${username}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete user');
+      }
+
+      // If backend delete successful, update local state
+      dataStore.deleteUser(username);
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Failed to delete user. Please try again.');
+    }
   };
 
   return (

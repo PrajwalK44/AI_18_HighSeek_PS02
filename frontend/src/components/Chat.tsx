@@ -203,32 +203,66 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
   const fetchAllChatHistories = async () => {
     setIsLoadingHistory(true);
     try {
-      // Implement a solution using the single chat history endpoint
-      // Since we don't have a direct endpoint for all histories, we'll create mock histories
+      // Try to get all chat histories - we'll create a fake endpoint URL that might exist
+      let chatHistoryItems: ChatHistoryItem[] = [];
 
-      // First get the current chat history
-      const response = await fetch(
+      // First try to get the current chat history
+      const currentChatResponse = await fetch(
         `http://127.0.0.1:8003/chat-history/${userId}`
       );
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (currentChatResponse.ok) {
+        const currentChatData = await currentChatResponse.json();
+
+        // Format the current chat as a history item
+        const currentChat: ChatHistoryItem = {
+          id: currentChatData._id || "current",
+          title: generateChatTitle(currentChatData.messages),
+          preview: generateChatPreview(currentChatData.messages),
+          timestamp: currentChatData.last_updated || new Date().toISOString(),
+          messages: currentChatData.messages || [],
+        };
+
+        chatHistoryItems.push(currentChat);
+
+        // Try also requesting optional histories with different IDs
+        try {
+          // Try a chat-histories endpoint if it exists
+          const allHistoriesResponse = await fetch(
+            `http://127.0.0.1:8003/chat-histories/${userId}`
+          );
+
+          if (allHistoriesResponse.ok) {
+            const data = await allHistoriesResponse.json();
+
+            if (data && data.histories && Array.isArray(data.histories)) {
+              // Filter out the current history to avoid duplicates
+              const otherHistories = data.histories
+                .filter((hist: any) => hist._id !== currentChatData._id)
+                .map((hist: any) => ({
+                  id: hist._id,
+                  title: generateChatTitle(hist.messages),
+                  preview: generateChatPreview(hist.messages),
+                  timestamp: hist.last_updated || new Date().toISOString(),
+                  messages: hist.messages || [],
+                }));
+
+              chatHistoryItems = [...chatHistoryItems, ...otherHistories];
+            }
+          }
+        } catch (historyError) {
+          console.log("No additional chat histories available");
+          // Just continue with the current chat history
+        }
       }
 
-      const data = await response.json();
+      // Sort by timestamp, most recent first
+      chatHistoryItems.sort(
+        (a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
 
-      // Create a history item from the current chat
-      const chatHistory: ChatHistoryItem = {
-        id: data._id || "current",
-        title: generateChatTitle(data.messages),
-        preview: generateChatPreview(data.messages),
-        timestamp: data.last_updated || new Date().toISOString(),
-        messages: data.messages || [],
-      };
-
-      // For now, just set this as the only chat history
-      // In a real implementation, we would fetch multiple chat histories
-      setChatHistories([chatHistory]);
+      setChatHistories(chatHistoryItems);
     } catch (error) {
       console.error("Error fetching chat histories:", error);
       setChatHistories([]);
@@ -311,8 +345,40 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     }
   };
 
+  // Create a new chat history on the backend
+  const createNewChatHistory = async () => {
+    try {
+      // Create a new chat history by calling the chat history endpoint with a POST method
+      const response = await fetch(
+        `http://127.0.0.1:8003/chat-history/${userId}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            username: user.username,
+            department: user.department,
+            create_new: true,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data._id || "current";
+    } catch (error) {
+      console.error("Error creating new chat history:", error);
+      return "current";
+    }
+  };
+
   // Start a new conversation (clear messages)
   const startNewConversation = async () => {
+    // Create initial welcome message
     const initialMessage: Message = {
       id: "welcome",
       role: "assistant",
@@ -320,16 +386,40 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
       timestamp: new Date().toISOString(),
     };
 
+    // Update local state
     setMessages([initialMessage]);
-    setCurrentChatId("current");
+
+    try {
+      // Force create a new chat history
+      const chatId = await createNewChatHistory();
+      setCurrentChatId(chatId);
+
+      // Add the welcome message to the new chat history
+      await fetch("http://127.0.0.1:8003/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: initialMessage.content,
+          department: user.department,
+          username: user.username,
+          user_id: userId,
+          is_system_message: true,
+        }),
+      });
+
+      // Refresh chat histories to show the new conversation
+      await fetchAllChatHistories();
+    } catch (error) {
+      console.error("Error creating new conversation:", error);
+      setCurrentChatId("current");
+    }
 
     // Close the sidebar on mobile after starting a new chat
     if (window.innerWidth < 768) {
       setSidebarOpen(false);
     }
-
-    // After creating a new conversation, refresh the chat histories
-    fetchAllChatHistories();
   };
 
   const toggleRecording = () => {

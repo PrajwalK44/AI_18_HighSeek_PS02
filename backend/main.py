@@ -79,6 +79,9 @@ class ChatRequest(BaseModel):
     department: str
     username: str  # Add username to identify the user
     user_id: Optional[str] = None  # Optional user_id
+    chat_id: Optional[str] = None  # Optional chat_id
+    is_system_message: Optional[bool] = False
+    new_conversation: Optional[bool] = False
 
 class ChatResponse(BaseModel):
     response: str
@@ -149,52 +152,93 @@ async def get_faq_response(query: str, department: str) -> Optional[dict]:
     """
     logger.info(f"FAQ lookup: query='{query}', department='{department}'")
     
+    # Check cache first
+    cache_key = f"faq:{department}:{query.lower().strip()}"
+    cached_result = await faq_cache_collection.find_one({"key": cache_key})
+    if cached_result:
+        logger.info(f"Cache hit for key: {cache_key}")
+        return {"answer": cached_result["answer"], "score": 1.0}
+    else:
+        logger.info(f"Cache miss for key: {cache_key}")
+    
+    # First try direct string matching (case insensitive)
     try:
-        # First try exact match
+        logger.info(f"Attempting exact match with regex: '^{query}$' in department '{department}'")
         exact_match_query = {
             "department": department,
             "question": {"$regex": f"^{query}$", "$options": "i"}
         }
+        logger.info(f"Exact match query: {str(exact_match_query)}")
+        
         exact_match = await faqs_collection.find_one(exact_match_query)
         
         if exact_match:
+            logger.info(f"Exact match found: {exact_match['question']}")
+            # Save to cache and return with perfect score
+            await faq_cache_collection.insert_one({
+                "key": cache_key,
+                "answer": exact_match["answer"],
+                "created_at": datetime.utcnow()
+            })
             return {"answer": exact_match["answer"], "score": 1.0}
+        else:
+            logger.info("No exact match found")
+    except Exception as e:
+        logger.error(f"Error during exact match search: {str(e)}")
 
-        # If no exact match, do similarity search
+    # If no exact match, proceed with similarity search
+    try:
+        logger.info(f"Fetching all FAQs for department '{department}' for similarity search")
         cursor = faqs_collection.find({"department": department})
         faqs = await cursor.to_list(length=100)
+        logger.info(f"Found {len(faqs)} FAQs in department '{department}'")
 
         if not faqs:
+            logger.info(f"No FAQs found for department '{department}'")
             return None
 
         # Prepare data for similarity calculation
         questions = [faq["question"] for faq in faqs]
         answers = [faq["answer"] for faq in faqs]
         
+        # Log a few questions for debugging
+        if questions:
+            sample_questions = questions[:min(3, len(questions))]
+            logger.info(f"Sample questions in database: {sample_questions}")
+
         # Compute TF-IDF vectors
         vectorizer = TfidfVectorizer()
         tfidf_matrix = vectorizer.fit_transform(questions + [query])
-        
-        # Calculate cosine similarity
-        query_vector = tfidf_matrix[-1]
-        faq_vectors = tfidf_matrix[:-1]
+
+        # Calculate cosine similarity between the query and all FAQs
+        query_vector = tfidf_matrix[-1]  # Last vector is the query
+        faq_vectors = tfidf_matrix[:-1]  # All vectors except the last are FAQs
         similarities = cosine_similarity(query_vector, faq_vectors).flatten()
-        
-        # Find best match
+
+        # Find the best match
         best_match_index = np.argmax(similarities)
         best_score = similarities[best_match_index]
 
-        # Return if confidence is high (above 0.8)
-        if best_score > 0.8:
-            return {
-                "answer": answers[best_match_index],
-                "score": best_score,
-                "question": questions[best_match_index]
-            }
+        logger.info(f"Best similarity score: {best_score} for question: '{questions[best_match_index]}'")
 
+        # Return with the similarity score
+        if best_score > 0.5:
+            best_answer = answers[best_match_index]
+            logger.info(f"Similarity match found above threshold (0.5)")
+
+            # Save to cache
+            await faq_cache_collection.insert_one({
+                "key": cache_key,
+                "answer": best_answer,
+                "created_at": datetime.utcnow()
+            })
+            return {"answer": best_answer, "score": best_score}
+        else:
+            logger.info(f"Best similarity score {best_score} below threshold (0.5)")
     except Exception as e:
-        logger.error(f"Error in FAQ lookup: {str(e)}")
-    
+        logger.error(f"Error during similarity search: {str(e)}")
+
+    logger.info("No matching FAQ found")
     return None
 
 def calculate_confidence(response: str, query: str) -> float:
@@ -304,9 +348,59 @@ async def process_chat_message(request: ChatRequest):
     try:
         logger.info(f"Received chat request: message='{request.message}', department='{request.department}', username='{request.username}'")
         
+        # Check if this is a system message or new conversation indicator
+        is_system_message = getattr(request, 'is_system_message', False)
+        new_conversation = getattr(request, 'new_conversation', False)
+        
         # Create or get user's chat history
         user_id = f"{request.username.lower()}_{request.department.lower()}"
-        chat_history_id = await get_or_create_chat_history(request.username, request.department)
+        
+        if new_conversation:
+            # Create a new chat history
+            welcome_message = {
+                "role": "assistant",
+                "content": f"Hello {request.username}! I'm your AI assistant for {request.department}. How can I help you today?",
+                "timestamp": datetime.utcnow().isoformat(),
+                "source": "system"
+            }
+            
+            new_history = {
+                "user_id": user_id,
+                "username": request.username,
+                "department": request.department,
+                "messages": [welcome_message],
+                "last_updated": datetime.utcnow()
+            }
+            
+            result = await chat_history_collection.insert_one(new_history)
+            chat_history_id = str(result.inserted_id)
+            
+            # Return the welcome message
+            return ChatResponse(
+                response=welcome_message["content"],
+                source="system",
+                chat_history_id=chat_history_id
+            )
+        else:
+            # Get existing chat history
+            chat_history_id = await get_or_create_chat_history(request.username, request.department)
+        
+        # If it's a system message, just add it to the history and return
+        if is_system_message:
+            system_message = {
+                "role": "assistant",
+                "content": request.message,
+                "timestamp": datetime.utcnow().isoformat(),
+                "source": "system"
+            }
+            
+            await add_to_chat_history(user_id, [system_message])
+            
+            return ChatResponse(
+                response=request.message,
+                source="system",
+                chat_history_id=chat_history_id
+            )
         
         # Add user message to chat history
         user_message = {
@@ -319,9 +413,11 @@ async def process_chat_message(request: ChatRequest):
         # Step 1: Check if a similar FAQ exists
         faq_result = await get_faq_response(request.message, request.department)
         
-        if faq_result and faq_result["score"] > 0.8:
-            logger.info(f"High confidence FAQ match found: {faq_result['score']}")
+        # If FAQ answer exists, return it directly without escalation
+        if faq_result:
+            logger.info(f"FAQ match found with score: {faq_result['score']}")
             
+            # Create assistant response
             assistant_message = {
                 "role": "assistant",
                 "content": faq_result["answer"],
@@ -330,11 +426,13 @@ async def process_chat_message(request: ChatRequest):
                 "confidence": faq_result["score"]
             }
             
+            # Add to chat history
             await add_to_chat_history(user_id, [assistant_message])
             
             return ChatResponse(
                 response=faq_result["answer"],
                 source="knowledge_base",
+                llm_reply=None,  # No LLM reply needed
                 faq_used=True,
                 confidence=faq_result["score"],
                 chat_history_id=chat_history_id
@@ -436,19 +534,95 @@ async def process_chat_message(request: ChatRequest):
             response=error_response,
             source="error"
         )
-
-# New endpoint to get chat history for a user
+        
 @app.get("/chat-history/{user_id}", response_model=Dict)
 async def get_chat_history(user_id: str):
     chat_history = await chat_history_collection.find_one({"user_id": user_id})
     
     if not chat_history:
-        raise HTTPException(status_code=404, detail=f"Chat history for user {user_id} not found")
+        # Parse username and department from user_id
+        # Format is "username_department"
+        parts = user_id.split('_')
+        if len(parts) < 2:
+            raise HTTPException(status_code=400, detail="Invalid user_id format")
+            
+        username = parts[0]
+        department = '_'.join(parts[1:])  # Handle department names that might contain underscores
+        
+        # Create new chat history with welcome message
+        welcome_message = {
+            "role": "assistant",
+            "content": f"Hello {username}! I'm your AI assistant for {department}. How can I help you today?",
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": "system"
+        }
+        
+        new_history = {
+            "user_id": user_id,
+            "username": username,
+            "department": department,
+            "messages": [welcome_message],
+            "last_updated": datetime.utcnow()
+        }
+        
+        result = await chat_history_collection.insert_one(new_history)
+        new_history["_id"] = str(result.inserted_id)
+        return new_history
     
     # Convert ObjectId to string for JSON response
     chat_history["_id"] = str(chat_history["_id"])
     
     return chat_history
+
+@app.post("/chat-history/{user_id}", response_model=Dict)
+async def create_new_chat_history(user_id: str, request: dict):
+    # Parse username and department from user_id or request body
+    username = request.get("username", "")
+    department = request.get("department", "")
+    
+    if not username or not department:
+        # Try to extract from user_id
+        parts = user_id.split('_')
+        if len(parts) < 2:
+            raise HTTPException(status_code=400, detail="Invalid user_id format and no username/department provided")
+        
+        username = parts[0]
+        department = '_'.join(parts[1:])  # Handle department names that might contain underscores
+    
+    # Create new chat history with welcome message
+    welcome_message = {
+        "role": "assistant",
+        "content": f"Hello {username}! I'm your AI assistant for {department}. How can I help you today?",
+        "timestamp": datetime.utcnow().isoformat(),
+        "source": "system"
+    }
+    
+    new_history = {
+        "user_id": user_id,
+        "username": username,
+        "department": department,
+        "messages": [welcome_message],
+        "last_updated": datetime.utcnow()
+    }
+    
+    result = await chat_history_collection.insert_one(new_history)
+    new_history["_id"] = str(result.inserted_id)
+    
+    return new_history
+
+@app.get("/chat-histories/{user_id}")
+async def get_all_chat_histories(user_id: str):
+    """
+    Get all chat histories for a user
+    """
+    cursor = chat_history_collection.find({"user_id": user_id})
+    histories = await cursor.to_list(length=100)
+    
+    # Convert ObjectIds to strings for JSON response
+    for history in histories:
+        history["_id"] = str(history["_id"])
+    
+    return {"histories": histories}
 
 # Add a diagnostic endpoint to check database connection and content
 @app.get("/diagnostic/faqs")

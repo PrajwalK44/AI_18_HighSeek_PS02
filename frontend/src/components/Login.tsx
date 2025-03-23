@@ -149,25 +149,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           </button>
         </form>
 
-        <div className="mt-4 sm:mt-8 p-3 sm:p-4 bg-muted rounded-lg animate-scale-in text-xs sm:text-sm">
-          <h3 className="text-xs sm:text-sm font-medium text-foreground mb-1 sm:mb-2">
-            Demo Credentials
-          </h3>
-          <div className="text-xs sm:text-sm text-muted-foreground space-y-1">
-            <p>
-              <strong>Admin:</strong> admin / admin123
-            </p>
-            <p>
-              <strong>HR:</strong> hr_user / password123
-            </p>
-            <p>
-              <strong>Sales:</strong> sales_user / password123
-            </p>
-            <p>
-              <strong>Finance:</strong> finance_user / password123
-            </p>
-          </div>
-        </div>
+        
       </div>
     </div>
   );
