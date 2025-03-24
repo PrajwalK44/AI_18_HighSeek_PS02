@@ -59,7 +59,14 @@ export const AdminDashboard: React.FC = () => {
           setIsLoadingMetrics(false);
         } else if (activeTab === 'escalations') {
           const response = await fetch(`${FASTAPI_URL}/escalations`);
-          const data = await response.json();
+          let data = await response.json();
+          // Sort by timestamp in descending order
+          data = data.sort((a: Escalation, b: Escalation) => {
+            const dateA = new Date(a.timestamp);
+            const dateB = new Date(b.timestamp); 
+            return dateB.getTime() - dateA.getTime();
+          });
+
           setEscalations(data);
         }
       } catch (error) {

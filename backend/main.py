@@ -139,7 +139,9 @@ system_prompt = """You are an enterprise ERP assistant. Follow these rules:
 1. Use FAQs from knowledge base when available
 2. For department-specific queries, provide general answers
 3. Escalate unclear queries with confidence < 0.8
-4. Maintain professional tone"""
+4. Maintain professional tone
+5.if the querry is related to finance,hr,sales etc , identify the department and it should display escaleted to correspoding department (it should be displayed mandatorily) escalate in the format: Escalated to the (corresponding) department
+6.Dont display the confidence level"""
 
 # Core chatbot functions
 from sklearn.feature_extraction.text import TfidfVectorizer
