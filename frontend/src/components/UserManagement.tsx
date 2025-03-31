@@ -22,7 +22,7 @@ export const UserManagement = () => {
   const fetchUsers = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('http://localhost:5000/api/users');
+      const response = await fetch('http://coreconnect-env-1.eba-wrysgphd.ap-south-1.elasticbeanstalk.com/api/users');
       
       if (!response.ok) {
         throw new Error('Failed to fetch users');
@@ -57,7 +57,7 @@ export const UserManagement = () => {
       setIsLoading(true);
       setError('');
       
-      const response = await fetch('http://localhost:5000/api/users', {
+      const response = await fetch('http://coreconnect-env-1.eba-wrysgphd.ap-south-1.elasticbeanstalk.com/api/users', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -100,7 +100,7 @@ export const UserManagement = () => {
     try {
       setIsLoading(true);
       
-      const response = await fetch(`http://localhost:5000/api/users/${username}`, {
+      const response = await fetch(`http://coreconnect-env-1.eba-wrysgphd.ap-south-1.elasticbeanstalk.com/api/users/${username}`, {
         method: 'DELETE',
       });
 
