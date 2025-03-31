@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 5000;
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: 'http://localhost:5173', // Replace with your frontend URL
+  origin: '*', // Replace with your frontend URL
   methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -44,7 +44,7 @@ app.use((req, res, next) => {
 */
 
 // Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/faqdb', {
+mongoose.connect('mongodb+srv://Prajwal:pk123@cluster-cc.7k7fc.mongodb.net/erp_assistant', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
