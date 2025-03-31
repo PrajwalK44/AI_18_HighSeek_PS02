@@ -13,7 +13,7 @@ import clsx from 'clsx';
 
 // Keep both API URLs
 const FASTAPI_URL = 'http://127.0.0.1:8003';
-const EXPRESS_URL = 'http://http://coreconnect-env-1.eba-wrysgphd.ap-south-1.elasticbeanstalk.com/';
+const EXPRESS_URL = 'http://coreconnect-env-1.eba-wrysgphd.ap-south-1.elasticbeanstalk.com';
 
 interface FAQ {
   id: number;
