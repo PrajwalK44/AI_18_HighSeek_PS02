@@ -1,7 +1,7 @@
 // src/services/api.js
 import axios from 'axios';
 
-const API_URL = 'http://coreconnect-env-1.eba-wrysgphd.ap-south-1.elasticbeanstalk.com/api';
+const API_URL = 'https://ai-18-highseek-ps02.onrender.com/api';
 
 export const apiService = {
   // FAQ endpoints
