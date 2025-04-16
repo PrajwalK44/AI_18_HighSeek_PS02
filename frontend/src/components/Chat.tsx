@@ -461,7 +461,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8003/chat", {
+      const response = await fetch("https://ai-18-highseek-ps02-2.onrender.com/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
