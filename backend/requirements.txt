@@ -6,3 +6,5 @@ langchain_groq
 motor
 bson
 python-dotenv
+gunicorn
+
