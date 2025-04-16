@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # MongoDB Connection
-MONGODB_URL = os.environ.get("MONGODB_URL", "mongodb://localhost:27017")
+MONGODB_URL = os.environ.get("MONGODB_URL", "mongodb+srv://Prajwal:pk123@cluster-cc.7k7fc.mongodb.net/erp_assistant")
 client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
 db = client.erp_assistant
 faqs_collection = db.faqs
