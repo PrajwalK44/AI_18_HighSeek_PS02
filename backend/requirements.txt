@@ -1,10 +1,11 @@
 fastapi
-uvicorn
+uvicorn[standard]
+gunicorn
 pydantic
 langchain
 langchain_groq
 motor
-bson
+pymongo
+scikit-learn
+numpy
 python-dotenv
-gunicorn
-
