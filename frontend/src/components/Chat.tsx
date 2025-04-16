@@ -350,7 +350,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     try {
       // Create a new chat history by calling the chat history endpoint with a POST method
       const response = await fetch(
-        `http://127.0.0.1:8003/chat-history/${userId}`,
+        `https://ai-18-highseek-ps02-2.onrender.com/chat-history/${userId}`,
         {
           method: "POST",
           headers: {
@@ -395,7 +395,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
       setCurrentChatId(chatId);
 
       // Add the welcome message to the new chat history
-      await fetch("http://127.0.0.1:8003/chat", {
+      await fetch("https://ai-18-highseek-ps02-2.onrender.com/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
