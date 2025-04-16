@@ -307,7 +307,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     setIsLoadingHistory(true);
     try {
       const response = await fetch(
-        `http://127.0.0.1:8003/chat-history/${userId}`
+        `https://ai-18-highseek-ps02-2.onrender.com/chat-history/${userId}`
       );
 
       if (!response.ok) {
