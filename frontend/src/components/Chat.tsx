@@ -208,7 +208,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
 
       // First try to get the current chat history
       const currentChatResponse = await fetch(
-        `http://127.0.0.1:8003/chat-history/${userId}`
+        `https://ai-18-highseek-ps02-g9ui.onrender.com/chat-history/${userId}`
       );
 
       if (currentChatResponse.ok) {
@@ -551,7 +551,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8003/chat", {
+      const response = await fetch("https://ai-18-highseek-ps02-g9ui.onrender.com/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -719,7 +719,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     const fetchInitialChatHistory = async () => {
       try {
         const response = await fetch(
-          `http://127.0.0.1:8003/chat-history/${userId}`
+          `https://ai-18-highseek-ps02-g9ui.onrender.com/chat-history/${userId}`
         );
 
         if (!response.ok) {
