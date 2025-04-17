@@ -12,7 +12,7 @@ import { Plus, Trash2, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 
 // Keep both API URLs
-const FASTAPI_URL = 'http://127.0.0.1:8003';
+const FASTAPI_URL = 'https://ai-18-highseek-ps02-g9ui.onrender.com/';
 const EXPRESS_URL = 'https://ai-18-highseek-ps02.onrender.com';
 
 interface FAQ {
