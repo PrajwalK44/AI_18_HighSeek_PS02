@@ -350,7 +350,7 @@ export const Chat: React.FC<ChatProps> = ({ user, onLogout }) => {
     try {
       // Create a new chat history by calling the chat history endpoint with a POST method
       const response = await fetch(
-        `https://ai-18-highseek-ps02-g9ui.onrender.com//chat-history/${userId}`,
+        `https://ai-18-highseek-ps02-g9ui.onrender.com/chat-history/${userId}`,
         {
           method: "POST",
           headers: {
